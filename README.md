@@ -216,7 +216,6 @@ src/
 ├── command-rewriter.ts         # Command rewrite decision adapter for RTK delegation
 ├── rtk-rewrite-provider.ts     # Calls `rtk rewrite` as the rewrite source of truth
 ├── rewrite-pipeline-safety.ts  # Shell-safety fixups for rewritten commands
-├── rtk-command-environment.ts  # RTK_DB_PATH scoping for rewritten commands
 ├── shell-env-prefix.ts         # Environment assignment parsing helpers
 ├── runtime-guard.ts            # Runtime availability guard helpers for rewrite mode
 ├── output-compactor.ts         # Tool result compaction pipeline

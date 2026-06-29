@@ -12,7 +12,6 @@ import { EXTENSION_NAME } from "./constants.js";
 import { clearOutputMetrics, getOutputMetricsSummary } from "./output-metrics.js";
 import type { ToolResultCompactionMetadata } from "./output-compactor.js";
 import { toRecord } from "./record-utils.js";
-import { applyRtkCommandEnvironment } from "./rtk-command-environment.js";
 import { resolveRtkExecutable, type RtkExecutableResolution } from "./rtk-executable-resolver.js";
 import { applyRewrittenCommandShellSafetyFixups } from "./rewrite-pipeline-safety.js";
 import { shouldRequireRtkAvailabilityForCommandHandling, shouldSkipCommandHandlingWhenRtkMissing } from "./runtime-guard.js";
@@ -422,8 +421,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 			if (config.showRewriteNotifications && ctx.hasUI) {
 				ctx.ui.notify(formatRewriteNotice(decision.originalCommand, decision.rewrittenCommand), "info");
 			}
-			const envScopedRewrittenCommand = applyRtkCommandEnvironment(decision.rewrittenCommand);
-			event.input.command = applyRewrittenCommandShellSafetyFixups(envScopedRewrittenCommand);
+			event.input.command = applyRewrittenCommandShellSafetyFixups(decision.rewrittenCommand);
 			return {};
 		}
 

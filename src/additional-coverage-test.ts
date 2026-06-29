@@ -7,7 +7,6 @@ import { matchesCommandPatterns, normalizeCommandForDetection } from "./techniqu
 import { compactPath } from "./techniques/path-utils.ts";
 import { applyWindowsBashCompatibilityFixes } from "./windows-command-helpers.ts";
 import { applyRewrittenCommandShellSafetyFixups } from "./rewrite-pipeline-safety.ts";
-import { applyRtkCommandEnvironment } from "./rtk-command-environment.ts";
 import { sanitizeStreamingBashExecutionResult } from "./tool-execution-sanitizer.ts";
 import { sanitizeRtkEmojiOutput } from "./techniques/emoji.ts";
 import { stripRtkHookWarnings } from "./techniques/rtk.ts";
@@ -188,39 +187,6 @@ runTest("command detection ignores env prefixes, blank lines, and chained suffix
 	assert.equal(matchesCommandPatterns("echo hello", [/^bun test/]), false);
 });
 
-runTest("RTK command environment preserves explicit leading RTK_DB_PATH overrides", () => {
-	const command = 'RTK_DB_PATH="/custom/history.db" rtk git diff';
-	assert.equal(applyRtkCommandEnvironment(command), command);
-
-	const singleQuotedCommand = "RTK_DB_PATH='/custom/it'\\''s/history.db' rtk git diff";
-	assert.equal(applyRtkCommandEnvironment(singleQuotedCommand), singleQuotedCommand);
-
-	const exportedCommand = 'export RTK_DB_PATH="/custom/history.db"; rtk git diff';
-	assert.equal(applyRtkCommandEnvironment(exportedCommand), exportedCommand);
-});
-
-runTest("RTK command environment single-quotes hostile temp paths", () => {
-	const previousTmpDir = process.env.TMPDIR;
-	const previousTmp = process.env.TMP;
-	const previousTemp = process.env.TEMP;
-	const hostilePath = process.platform === "win32" ? "C:\\Temp\\$(touch owned)`bad`'dir" : "/tmp/$(touch owned)`bad`'dir";
-
-	try {
-		process.env.TMPDIR = hostilePath;
-		process.env.TMP = hostilePath;
-		process.env.TEMP = hostilePath;
-
-		const rewritten = applyRtkCommandEnvironment("rtk git status");
-		assert.ok(rewritten.startsWith("export RTK_DB_PATH='"));
-		assert.ok(rewritten.includes("$(touch owned)`bad`'\\''dir"));
-		assert.ok(rewritten.endsWith("; rtk git status"));
-		assert.equal(/^export RTK_DB_PATH=\"/.test(rewritten), false);
-	} finally {
-		process.env.TMPDIR = previousTmpDir;
-		process.env.TMP = previousTmp;
-		process.env.TEMP = previousTemp;
-	}
-});
 
 runTest("path compaction preserves the tail and handles Windows separators", () => {
 	const unixPath = "/Users/example/projects/pi-rtk-optimizer/src/techniques/path-utils.ts";
@@ -303,20 +269,22 @@ runTest("rewrite pipeline safety buffers leading pipelines before compound suffi
 	assert.ok(semicolonCommand.endsWith("; echo done"));
 });
 
-runTest("rewrite pipeline safety keeps exported RTK_DB_PATH on rewritten producer commands", () => {
-	const envScopedCommand = applyRtkCommandEnvironment("rtk git diff agent/extensions/pi-multi-auth/account-manager.ts | head -200");
-	const rewritten = applyRewrittenCommandShellSafetyFixups(envScopedCommand, "win32");
+runTest("rewrite pipeline safety buffers rewritten producer commands on Windows", () => {
+	const rewritten = applyRewrittenCommandShellSafetyFixups(
+		"rtk git diff agent/extensions/pi-multi-auth/account-manager.ts | head -200",
+		"win32",
+	);
 
-	assert.ok(rewritten.startsWith("export RTK_DB_PATH="));
-	assert.equal(rewritten.startsWith("RTK_DB_PATH="), false);
-	assert.ok(rewritten.includes("; {"));
+	assert.ok(rewritten.startsWith("{"));
 	assert.ok(
 		rewritten.includes('rtk git diff agent/extensions/pi-multi-auth/account-manager.ts > "$__pi_rtk_pipe_tmp"'),
 	);
 	assert.ok(rewritten.includes('(head -200) < "$__pi_rtk_pipe_tmp"'));
 
-	assert.equal(applyRewrittenCommandShellSafetyFixups(envScopedCommand, "linux"), envScopedCommand);
+	const passthroughCommand = "rtk git diff agent/extensions/pi-multi-auth/account-manager.ts | head -200";
+	assert.equal(applyRewrittenCommandShellSafetyFixups(passthroughCommand, "linux"), passthroughCommand);
 });
+
 
 runTest("rewrite pipeline safety buffers explicit RTK_DB_PATH export preludes", () => {
 	const command = 'export RTK_DB_PATH="/custom/history.db"; rtk git diff | head -200';
@@ -329,11 +297,6 @@ runTest("rewrite pipeline safety buffers explicit RTK_DB_PATH export preludes", 
 	assert.equal(applyRewrittenCommandShellSafetyFixups(command, "linux"), command);
 });
 
-runTest("RTK command environment uses export prelude for shell compound commands", () => {
-	const rewritten = applyRtkCommandEnvironment('for d in a b; do echo "$d"; done');
-	assert.ok(/^export RTK_DB_PATH=/.test(rewritten));
-	assert.ok(/; for d in a b; do echo "\$d"; done$/.test(rewritten));
-});
 
 runTest("stripRtkHookWarnings handles bare, prefixed, and already-sanitized hook notices", () => {
 	assert.equal(
